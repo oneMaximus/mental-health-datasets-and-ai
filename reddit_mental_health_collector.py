@@ -15,9 +15,9 @@ import os
 
 # Configuration
 REDDIT_CONFIG = {
-    'client_id': 'YOUR_CLIENT_ID',
-    'client_secret': 'YOUR_CLIENT_SECRET',
-    'user_agent': 'mental_health_research_bot/1.0'
+    'client_id': 'lB95YTUsFXu3iahQJm8wRw',
+    'client_secret': 'sMMBGju4uPJSx7i8xcT9kfX_9dKC_g',
+    'user_agent': 'mental_health_research/1.0'
 }
 
 # Mental health conditions and their corresponding subreddits
