@@ -17,20 +17,20 @@ import os
 REDDIT_CONFIG = {
     'client_id': 'lB95YTUsFXu3iahQJm8wRw',
     'client_secret': 'sMMBGju4uPJSx7i8xcT9kfX_9dKC_g',
-    'user_agent': 'mental_health_research/1.0'
+    'user_agent': 'mental_health_research_bot/1.0'
 }
 
 # Mental health conditions and their corresponding subreddits
 DISORDERS = {
-    'Depression': ['depression', 'depression_help', 'mentalhealth'],
-    'ADHD': ['ADHD', 'ADHDmemes', 'adhdwomen'],
-    'Anxiety': ['Anxiety', 'HealthAnxiety', 'socialanxiety'],
-    'Bipolar': ['bipolar', 'bipolar2', 'BipolarReddit'],
-    'PTSD': ['ptsd', 'CPTSD', 'traumatoolbox'],
-    'Autism': ['autism', 'aspergers', 'AutismTranslated'],
-    'Schizophrenia': ['schizophrenia', 'schizoaffective', 'Psychosis'],
-    'OCD': ['OCD', 'OCDmemes', 'OCDRecovery'],
-    'Eating_Disorder': ['EatingDisorders', 'EDAnonymous', 'fuckeatingdisorders']
+    'Depression': ['depression', 'depression_help', 'mentalhealth', 'depressed', 'depression_memes', 'depressionregimens'],
+    'ADHD': ['ADHD', 'ADHDmemes', 'adhdwomen', 'adultadhd', 'adhd_anxiety', 'ADHDers'],
+    'Anxiety': ['Anxiety', 'HealthAnxiety', 'socialanxiety', 'PanicAttack', 'Agoraphobia', 'Anxietyhelp'],
+    'Bipolar': ['bipolar', 'bipolar2', 'BipolarReddit', 'BipolarSOs', 'bipolarart'],
+    'PTSD': ['ptsd', 'CPTSD', 'traumatoolbox', 'PTSDCombat', 'rapecounseling'],
+    'Autism': ['autism', 'aspergers', 'AutismTranslated', 'aspergirls', 'AutisticAdults', 'neurodiversity'],
+    'Schizophrenia': ['schizophrenia', 'schizoaffective', 'Psychosis', 'Schizoaffective'],
+    'OCD': ['OCD', 'OCDmemes', 'OCDRecovery', 'ROCD', 'PureO'],
+    'Eating_Disorder': ['EatingDisorders', 'EDAnonymous', 'fuckeatingdisorders', 'AnorexiaNervosa', 'bulimia', 'BingeEatingDisorder']
 }
 
 # Keywords to identify diagnosed users
@@ -84,14 +84,20 @@ def initialize_reddit():
         print(f"✗ Error connecting to Reddit API: {e}")
         return None
 
-def collect_posts_for_disorder(reddit, disorder_name, subreddit_list, post_limit=100):
+def collect_posts_for_disorder(reddit, disorder_name, subreddit_list, target_posts=2000):
     """
     Collect posts from subreddits for a specific disorder
+    Uses multiple sorting methods and date filtering to get historical data
     """
     posts_data = []
+    seen_post_ids = set()  # Avoid duplicates
+    
+    # Date filter - posts from 2015 onwards
+    cutoff_date = datetime(2015, 1, 1).timestamp()
     
     print(f"\n{'='*60}")
     print(f"Collecting data for: {disorder_name}")
+    print(f"Target: {target_posts} posts from 2015 onwards")
     print(f"{'='*60}")
     
     for subreddit_name in subreddit_list:
@@ -99,47 +105,79 @@ def collect_posts_for_disorder(reddit, disorder_name, subreddit_list, post_limit
             subreddit = reddit.subreddit(subreddit_name)
             print(f"\nSearching r/{subreddit_name}...")
             
-            # Search through recent posts
-            post_count = 0
             diagnosed_count = 0
             
-            # Get posts from multiple sources
-            for post in subreddit.hot(limit=post_limit):
-                post_count += 1
-                
-                # Combine title and selftext for checking
-                full_text = f"{post.title} {post.selftext}"
-                
-                # Check if user mentions being diagnosed
-                if check_if_diagnosed(full_text):
-                    diagnosed_count += 1
-                    
-                    # Extract post data
-                    post_date = datetime.fromtimestamp(post.created_utc).strftime('%Y-%m-%d %H:%M:%S')
-                    
-                    posts_data.append({
-                        'Date': post_date,
-                        'Title': post.title,
-                        'Description': post.selftext if post.selftext else '[No description]',
-                        'Subreddit': f"r/{subreddit_name}",
-                        'URL': f"https://reddit.com{post.permalink}"
-                    })
-                    
-                    print(f"  ✓ Found diagnosed user post: {post.title[:50]}...")
-                
-                # Rate limiting
-                if post_count % 50 == 0:
-                    print(f"  Processed {post_count} posts, found {diagnosed_count} diagnosed users...")
-                    time.sleep(1)
+            # Use multiple sorting methods to get diverse posts
+            sorting_methods = [
+                ('new', 1000),      # Recent posts
+                ('top', 1000),      # Top posts of all time
+                ('hot', 300),       # Currently hot posts
+            ]
             
-            print(f"  Completed r/{subreddit_name}: Found {diagnosed_count} diagnosed users out of {post_count} posts")
+            for sort_method, limit in sorting_methods:
+                print(f"  Fetching {sort_method} posts...")
+                
+                try:
+                    if sort_method == 'new':
+                        posts = subreddit.new(limit=limit)
+                    elif sort_method == 'top':
+                        posts = subreddit.top(time_filter='all', limit=limit)
+                    elif sort_method == 'hot':
+                        posts = subreddit.hot(limit=limit)
+                    
+                    for post in posts:
+                        # Skip if already processed
+                        if post.id in seen_post_ids:
+                            continue
+                        
+                        # Check date - only posts from 2015 onwards
+                        if post.created_utc < cutoff_date:
+                            continue
+                        
+                        seen_post_ids.add(post.id)
+                        
+                        # Combine title and selftext for checking
+                        full_text = f"{post.title} {post.selftext}"
+                        
+                        # Check if user mentions being diagnosed
+                        if check_if_diagnosed(full_text):
+                            diagnosed_count += 1
+                            
+                            # Extract post data
+                            post_date = datetime.fromtimestamp(post.created_utc).strftime('%Y-%m-%d %H:%M:%S')
+                            
+                            posts_data.append({
+                                'Date': post_date,
+                                'Title': post.title,
+                                'Description': post.selftext if post.selftext else '[No description]',
+                                'Subreddit': f"r/{subreddit_name}",
+                                'URL': f"https://reddit.com{post.permalink}",
+                                'Score': post.score,
+                                'Num_Comments': post.num_comments
+                            })
+                            
+                            if diagnosed_count % 50 == 0:
+                                print(f"    ✓ Found {diagnosed_count} diagnosed posts so far...")
+                    
+                    time.sleep(2)  # Rate limiting between sort methods
+                    
+                except Exception as e:
+                    print(f"    ✗ Error with {sort_method} sorting: {e}")
+                    continue
+            
+            print(f"  ✓ Completed r/{subreddit_name}: {diagnosed_count} diagnosed posts")
+            
+            # Check if we've reached target
+            if len(posts_data) >= target_posts:
+                print(f"\n✓ Reached target of {target_posts} posts!")
+                break
             
         except Exception as e:
             print(f"  ✗ Error accessing r/{subreddit_name}: {e}")
             continue
         
-        # Small delay between subreddits
-        time.sleep(2)
+        # Delay between subreddits
+        time.sleep(3)
     
     print(f"\n✓ Total posts collected for {disorder_name}: {len(posts_data)}")
     return posts_data
@@ -159,7 +197,12 @@ def export_to_excel(all_data, output_file='mental_health_reddit_data.xlsx'):
                 df = pd.DataFrame(posts_data)
                 
                 # Reorder columns
-                df = df[['Date', 'Title', 'Description', 'Subreddit', 'URL']]
+                df = df[['Date', 'Title', 'Description', 'Subreddit', 'Score', 'Num_Comments', 'URL']]
+                
+                # Sort by date (newest first)
+                df['Date'] = pd.to_datetime(df['Date'])
+                df = df.sort_values('Date', ascending=False)
+                df['Date'] = df['Date'].dt.strftime('%Y-%m-%d %H:%M:%S')
                 
                 # Write to Excel
                 sheet_name = disorder_name[:31]  # Excel sheet name limit
@@ -198,10 +241,12 @@ def format_excel_file(filename):
         ws.column_dimensions['B'].width = 50  # Title
         ws.column_dimensions['C'].width = 80  # Description
         ws.column_dimensions['D'].width = 20  # Subreddit
-        ws.column_dimensions['E'].width = 60  # URL
+        ws.column_dimensions['E'].width = 12  # Score
+        ws.column_dimensions['F'].width = 15  # Num_Comments
+        ws.column_dimensions['G'].width = 60  # URL
         
         # Wrap text in Description column
-        for row in ws.iter_rows(min_row=2, max_col=5):
+        for row in ws.iter_rows(min_row=2, max_col=7):
             row[2].alignment = Alignment(wrap_text=True, vertical='top')
     
     wb.save(filename)
@@ -231,6 +276,7 @@ def main():
     print("="*60)
     print("REDDIT MENTAL HEALTH DATA COLLECTOR")
     print("Collecting posts from DIAGNOSED users only")
+    print("Target: ~2000 posts per disorder (2015-present)")
     print("="*60)
     
     # Initialize Reddit connection
@@ -247,7 +293,7 @@ def main():
             reddit, 
             disorder_name, 
             subreddit_list,
-            post_limit=200  # Adjust this number based on your needs
+            target_posts=2000  # Target 2000 posts per disorder
         )
         all_data[disorder_name] = posts_data
     
